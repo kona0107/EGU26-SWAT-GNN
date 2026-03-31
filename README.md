@@ -26,20 +26,44 @@ This repository contains the official PyTorch implementation of a Spatio-Tempora
 └── document/                  # Supporting academic documents
 ```
 
-## 🛠️ Installation & Setup (WIP)
-1. Clone this repository
+## 🛠️ Installation & Setup (For Team Members)
+
+1. **Clone the repository**
 ```bash
-git clone https://github.com/username/hydrogat.git
-cd hydrogat/script
+git clone https://github.com/kona0107/EGU26-SWAT-GNN.git
+cd EGU26-SWAT-GNN
 ```
 
-2. Install dependencies (Requires PyTorch, PyTorch Geometric)
+2. **Create and Activate a Virtual Environment**
+It is highly recommended to isolate dependencies using a virtual environment (`venv`).
 ```bash
-pip install -r requirements.txt # (To be added)
+# Windows
+python -m venv .venv
+.\.venv\Scripts\activate
+
+# macOS/Linux
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-## 📝 Usage
-(Details to be provided: How to train the model, start evaluations, etc.)
+3. **Install Dependencies**
+Ensure you have the virtual environment activated, then install the required packages.
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install torch_geometric
+```
+
+## 📝 Usage (Testing the Pipeline)
+
+We have created a fully integrated testing script to verify the data ingestion and model forward pass using the sample SWAT dataset.
+
+**Run the Integration Test:**
+```bash
+python script/src/gnn_project/test_run.py
+```
+*Expected Output:*
+The script will output the structural shapes of the data tensors entering the Spatio-Temporal Graph Neural Network (ST-GNN) and confirm that the final predictive outputs match exactly `[Batch, Nodes, OutFeatures(1)]`.
 
 ## 📜 License
 [MIT License](LICENSE) (Change to Apache 2.0 or appropriate license based on your preference)
