@@ -78,6 +78,7 @@ data/
 datasets/
 models/
 docs/
+document/
 *.pkl
 *.sqlite
 *.sqlite3
