@@ -26,44 +26,44 @@ This repository contains the official PyTorch implementation of a Spatio-Tempora
 └── document/                  # Supporting academic documents
 ```
 
-## 🛠️ Installation & Setup (For Team Members)
+## 🛠️ 환경 세팅 및 설치 가이드 (팀원용)
 
-1. **Clone the repository**
+1. **저장소 클론(Clone) 받아오기**
 ```bash
 git clone https://github.com/kona0107/EGU26-SWAT-GNN.git
 cd EGU26-SWAT-GNN
 ```
 
-2. **Create and Activate a Virtual Environment**
-It is highly recommended to isolate dependencies using a virtual environment (`venv`).
+2. **파이썬 가상환경 생성 및 실행**
+라이브러리 버전 충돌을 막기 위해 가상환경(`.venv`) 사용을 강력히 권장합니다.
 ```bash
-# Windows
+# Windows 사용자
 python -m venv .venv
 .\.venv\Scripts\activate
 
-# macOS/Linux
+# macOS/Linux 사용자
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-3. **Install Dependencies**
-Ensure you have the virtual environment activated, then install the required packages.
+3. **필수 라이브러리 설치**
+반드시 가상환경이 켜진 상태(터미널 앞에 `(.venv)` 표시 확인)에서 아래 명령어를 실행하세요.
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 pip install torch_geometric
 ```
 
-## 📝 Usage (Testing the Pipeline)
+## 📝 모델 통합 테스트 (Usage)
 
-We have created a fully integrated testing script to verify the data ingestion and model forward pass using the sample SWAT dataset.
+우리가 설계한 `SWAT 데이터셋 -> 시간적 Transformer -> 공간적 GAT` 전체 파이프라인이 빈틈없이 잘 맞물려 작동하는지 확인하기 위한 테스트 코드가 준비되어 있습니다.
 
-**Run the Integration Test:**
+**테스트 스크립트 실행 명령어:**
 ```bash
 python script/src/gnn_project/test_run.py
 ```
-*Expected Output:*
-The script will output the structural shapes of the data tensors entering the Spatio-Temporal Graph Neural Network (ST-GNN) and confirm that the final predictive outputs match exactly `[Batch, Nodes, OutFeatures(1)]`.
+*✅ 정상 작동 시 예상 화면:*
+터미널에 데이터가 배치 텐서로 변환되는 과정이 순서대로 출력되며, 가장 마지막 줄에 성공(SUCCESS) 메세지와 함께 최종 모델의 예측 텐서 형태가 `[32, 29, 1]`로 정확히 도출되었음이 안내됩니다.
 
 ## 🤝 팀 협업 가이드 (Branch & Convention)
 
