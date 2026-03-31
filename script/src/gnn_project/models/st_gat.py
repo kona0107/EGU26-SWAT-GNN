@@ -8,19 +8,19 @@ class SpatioTemporalGNN(nn.Module):
     Temporal-first, Spatial-second 구조의 통합 시공간 그래프 메인 모델.
     주 타깃인 위성 Chl-a 예측에 최적화.
     """
-    def __init__(self, in_features, gru_hidden, gat_hidden, out_features=1, num_gru_layers=1, gat_heads=2):
+    def __init__(self, in_features, temporal_hidden, gat_hidden, out_features=1, num_temporal_layers=2, gat_heads=2):
         super().__init__()
         
         # 1. Temporal Component (시간 우선 처리)
         self.temporal_encoder = TemporalEncoder(
             input_dim=in_features, 
-            hidden_dim=gru_hidden, 
-            num_layers=num_gru_layers
+            hidden_dim=temporal_hidden, 
+            num_layers=num_temporal_layers
         )
         
         # 2. Spatial Component (공간 관계 전파)
         self.spatial_encoder = SpatialEncoder(
-            in_channels=gru_hidden, 
+            in_channels=temporal_hidden, 
             hidden_channels=gat_hidden, 
             out_channels=gat_hidden, 
             heads=gat_heads
@@ -41,7 +41,7 @@ class SpatioTemporalGNN(nn.Module):
         """
         B, L, N, F = x_seq.shape
         
-        # Step 1: 시간 우선 인코딩 => [B, N, gru_hidden]
+        # Step 1: 트랜스포머 시간 인코딩 => [B, N, temporal_hidden]
         node_embeds = self.temporal_encoder(x_seq)
         
         # Step 2: GAT는 [B*N, 피쳐] 형태를 입력받으므로 차원 Flat 처리
