@@ -74,9 +74,8 @@ venv.bak/
 *.pt
 *.pth
 *.zip
-data/
+/script/data/
 datasets/
-models/
 docs/
 document/
 *.pkl
