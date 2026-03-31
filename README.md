@@ -2,7 +2,12 @@
 
 A Spatio-Temporal Graph Attention Network (ST-GAT) framework for modeling hydrological processes using SWAT data. 
 
-**Note: This project is part of the research presented at EGU26.**
+## Project Status
+
+This repository supports ongoing research to be presented at EGU General Assembly 2026 (EGU26).
+A poster presentation is scheduled for May 5, 2026.
+
+The implementation in this repository represents the current stage of the study and is subject to revision as the research develops.
 
 ## 📌 Project Overview
 This repository contains the official PyTorch implementation of a Spatio-Temporal Graph Neural Network (ST-GAT) designed to process SWAT (Soil and Water Assessment Tool) dataset for the Miho River Basin. The model captures both complex topological routing (spatial dependencies) and time-series hydrological patterns (temporal dependencies).
