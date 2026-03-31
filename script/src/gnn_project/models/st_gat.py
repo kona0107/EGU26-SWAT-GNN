@@ -9,6 +9,13 @@ class SpatioTemporalGNN(nn.Module):
     주 타깃인 위성 Chl-a 예측에 최적화.
     """
     def __init__(self, in_features, temporal_hidden, gat_hidden, out_features=1, num_temporal_layers=2, gat_heads=2):
+        """
+        초기화 파라미터 설명:
+        - in_features: 입력 피처 개수 (SWAT의 Flow, TN, TP = 3)
+        - temporal_hidden: 트랜스포머(시간 모델)에서 압축되어 나올 피처의 크기 (예: 32)
+        - gat_hidden: 공간 전파 모델(GAT)에서 최종적으로 공간 관계를 학습할 두뇌 크기 (예: 16)
+        - out_features: 우리가 최종적으로 예측하고 싶은 타겟 개수 (조류 Chl-a 농도 = 1)
+        """
         super().__init__()
         
         # 1. Temporal Component (시간 우선 처리)

@@ -28,6 +28,14 @@ class TemporalEncoder(nn.Module):
     데이터 간의 장기적인 의존성과 딜레이(지연) 효과를 정확하게 포착합니다.
     """
     def __init__(self, input_dim, hidden_dim, num_layers=2, nhead=4, dropout=0.1):
+        """
+        초기화 파라미터 설명:
+        - input_dim: 입력 피처의 개수 (SWAT 데이터의 Flow, TN, TP 등 = 3)
+        - hidden_dim: 트랜스포머가 내부적으로 계산할 공간의 크기 (예: 32차원 뻥튀기 공간)
+        - num_layers: 트랜스포머 인코더 블록을 몇 겹으로 쌓을지 (보통 2~4겹)
+        - nhead: Multi-head Attention 장치의 개수. 동시에 여러 관점에서 과거 데이터를 평가합니다.
+                 (예: 헤드1은 유량을 집중분석, 헤드2는 총인(TP) 유입 집중분석 등)
+        """
         super().__init__()
         # 1. 원본 변수들을 트랜스포머 차원(d_model)으로 선형 변환
         self.input_projection = nn.Linear(input_dim, hidden_dim)
@@ -47,8 +55,13 @@ class TemporalEncoder(nn.Module):
 
     def forward(self, x):
         """
+        핵심 변수 설명 (B, L, N, F):
+        - B (Batch Size): 한 번에 학습할 데이터 묶음의 크기 (예: 32일치 상황을 묶어서 병렬 학습)
+        - L (Lookback Window): 트랜스포머가 과거를 되돌아보는 기간 (예: 과거 14일치)
+        - N (Nodes/Subbasins): 미호강 유역의 세부 소유역 개수 (예: 29개)
+        - F (Features): 투입된 환경 변수의 개수 (Flow, TN, TP = 3개)
+        
         :param x: [B, L, N, F] 형태의 원본 시계열 피처
-                  (Batch, Lookback window, Nodes, Features)
         :return: [B, N, hidden_dim] 형태의 노드별 시계열 맥락 임베딩
         """
         B, L, N, F = x.shape
