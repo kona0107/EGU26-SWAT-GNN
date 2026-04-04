@@ -1,34 +1,73 @@
-# HydroGAT (SWAT-STGAT)
+# HydroGNN (SWAT-ST-GCN)
 
-A Spatio-Temporal Graph Attention Network (ST-GAT) framework for modeling hydrological processes using SWAT data. 
+미호천 유역의 수문 자료를 활용하여 유출구 클로로필-a(Chl-a) 농도를 예측하는 시공간 그래프 신경망(Spatio-Temporal GNN) 프레임워크입니다.
 
 ## Project Status
 
-This repository supports ongoing research to be presented at EGU General Assembly 2026 (EGU26).
-A poster presentation is scheduled for May 5, 2026.
+EGU General Assembly 2026 (EGU26) 발표를 위한 연구 코드입니다.
+포스터 발표일: 2026년 5월 5일
 
-The implementation in this repository represents the current stage of the study and is subject to revision as the research develops.
+본 저장소의 구현체는 연구 진행 상황에 따라 지속적으로 업데이트됩니다.
 
-## 📌 Project Overview
-This repository contains the official PyTorch implementation of a Spatio-Temporal Graph Neural Network (ST-GAT) designed to process SWAT (Soil and Water Assessment Tool) dataset for the Miho River Basin. The model captures both complex topological routing (spatial dependencies) and time-series hydrological patterns (temporal dependencies).
+## 📌 연구 개요
 
-## 🚀 Key Features
-- **Spatial Modeling**: Utilizes Graph Attention Networks (GAT) to dynamically weigh the importance of connected sub-basins.
-- **Temporal Modeling**: Integrates temporal layers to process sequential time-series SWAT records.
-- **Custom Dataset Loading**: Includes `MihoSpatioTemporalDataset` for structured batch processing of spatial routing and temporal variables.
-- **EGU26**: Structured for academic research and reproducible experiments.
+SWAT(Soil and Water Assessment Tool) 보정/검증 결과 및 현장 관측 자료를 활용하여 **미호천 유출구의 주단위 Chl-a 농도**를 예측합니다.
 
-## 📁 Repository Structure
+**예측 목표**: 유출구 1개 지점의 `Chl-a[t]`
+
+**입력 자료**:
+- 상류 노드: `유량(Flow)`, `총질소(TN)`, `총인(TP)` — 주단위 SWAT 출력값
+- 유출구 노드: `수온(Water Temp)`, `강수량(Rain)`, `과거 Chl-a[t-k:t-1]` — 현장 관측값
+
+**핵심 설계 원칙**:
+- `t` 시점 예측 시 입력은 반드시 `t-1` 시점까지만 사용 (Data Leakage 원천 차단)
+- Train 데이터만으로 Scaler를 fit한 뒤 Zero-Padding 적용 (통계 왜곡 방지)
+- Train < Val < Test 시간 순서대로 분할 (Random Split 금지)
+
+## 🗂️ 모델 구성
+
+### Model 1. Transformer (Baseline)
+유출구 단일 지점의 시계열만 사용하는 기준 모델입니다.
+
+| 항목 | 내용 |
+|---|---|
+| 입력 | 유출구 `[수온, 강수량, 과거 Chl-a]` 시계열 |
+| 시간 모델링 | Transformer Encoder |
+| 출력 | `Chl-a[t]` (스칼라) |
+
+### Model 2. Transformer + SAGEConv (Main)
+상류 수질·유량 정보를 공간 그래프를 통해 유출구로 전달하는 시공간 하이브리드 모델입니다.
+
+| 항목 | 내용 |
+|---|---|
+| 입력 | 전체 노드 `7D` 통일 피처 (Zero-Padding + Node-Type Indicator) |
+| 시간 모델링 | Transformer Encoder (노드별 독립 적용) |
+| 공간 모델링 | SAGEConv (상류→하류 directed edge 전용) |
+| 출력 | 유출구 노드 임베딩 → MLP → `Chl-a[t]` |
+
+**노드 피처 구조 (7D)**:
+```
+공통 순서: [Flow, TN, TP, Temp, Rain, Chl-a_past, NodeType]
+상류 노드: [Flow, TN, TP,    0,    0,           0,        0]
+유출구:    [   0,  0,  0, Temp, Rain,  Chl-a_past,        1]
+```
+
+## 📁 파일 구조
+
 ```
 ├── script/
 │   ├── src/
-│   │   ├── gnn_project/
-│   │   │   ├── models/        # ST-GAT, GAT, Temporal architectures
-│   │   │   ├── losses.py      # Custom loss functions
-│   │   │   └── ...
-│   ├── data/                  # SWAT data, adjacency matrices (Exclude from Git)
-│   ├── configs/               # Hyperparameter configurations
-└── document/                  # Supporting academic documents
+│   │   └── gnn_project/
+│   │       ├── models/
+│   │       │   ├── temporal.py    # Transformer Encoder + TransformerBaseline (Model 1)
+│   │       │   ├── gcn.py         # SAGEConv 기반 SpatialEncoder
+│   │       │   └── st_gcn.py      # 시공간 하이브리드 GNN (Model 2)
+│   │       ├── data/
+│   │       │   └── dataset.py     # 엄격한 시계열 분할 및 데이터셋 클래스
+│   │       └── test_run.py        # 전체 파이프라인 통합 테스트
+│   └── data/                      # SWAT 출력, 관측 자료 (Git 제외)
+├── document/                      # 연구 관련 문서
+└── requirements.txt
 ```
 
 ## 🛠️ 환경 세팅 및 설치 가이드 (팀원용)
@@ -40,70 +79,75 @@ cd EGU26-SWAT-GNN
 ```
 
 2. **파이썬 가상환경 생성 및 실행**
-라이브러리 버전 충돌을 막기 위해 가상환경(`.venv`) 사용을 강력히 권장합니다.
 ```bash
-# Windows 사용자
+# Windows
 python -m venv .venv
 .\.venv\Scripts\activate
 
-# macOS/Linux 사용자
+# macOS/Linux
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
 3. **필수 라이브러리 설치**
-반드시 가상환경이 켜진 상태(터미널 앞에 `(.venv)` 표시 확인)에서 아래 명령어를 실행하세요.
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 pip install torch_geometric
 ```
 
-## 📝 모델 통합 테스트 (Usage)
+## 📝 파이프라인 통합 테스트 실행
 
-우리가 설계한 `SWAT 데이터셋 -> 시간적 Transformer -> 공간적 GAT` 전체 파이프라인이 빈틈없이 잘 맞물려 작동하는지 확인하기 위한 테스트 코드가 준비되어 있습니다.
+더미 데이터로 전체 파이프라인(데이터 분할 → Scaling → Padding → 모델 Forward → 검증)이 정상 작동하는지 확인합니다.
 
-**테스트 스크립트 실행 명령어:**
 ```bash
 python script/src/gnn_project/test_run.py
 ```
-*✅ 정상 작동 시 예상 화면:*
-터미널에 데이터가 배치 텐서로 변환되는 과정이 순서대로 출력되며, 가장 마지막 줄에 성공(SUCCESS) 메세지와 함께 최종 모델의 예측 텐서 형태가 `[32, 29, 1]`로 정확히 도출되었음이 안내됩니다.
+
+**정상 실행 시 출력 내용:**
+- Train/Val/Test 시간순 분할 완료 메시지
+- Padding/Leakage/Node-Type Sanity Check 통과 확인
+- Persistence Baseline MSE 출력
+- Model 1 (Transformer) Forward 성공 → Output Shape: `[B, 1]`
+- Model 2 (Hybrid Trans+GCN) Forward 성공 → Output Shape: `[B, 1]`
+- `✅ 전체 파이프라인 정상 구동 검증 완료`
 
 ## 🤝 팀 협업 가이드 (Branch & Convention)
 
-팀원들과의 안전하고 효율적인 협업을 위해 아래의 규칙을 지켜주세요.
-
-### 1. 브랜치(Branch) 생성 및 작업 흐름 (Workflow)
-원격 저장소의 `main` 브랜치에 직접 코드를 올리는 것(Direct Push)은 권장하지 않습니다. 항상 본인의 브랜치를 만들어 작업해 주세요.
+### 1. 브랜치(Branch) 작업 흐름
 
 ```bash
 # 1. 최신 코드 가져오기
 git pull origin main
 
-# 2. 본인의 작업용 새 브랜치 생성 및 이동
-git checkout -b feature/기능이름   # 예: feature/add-transformer, fix/data-loader
+# 2. 본인 작업용 브랜치 생성
+git checkout -b feature/기능이름   # 예: feature/add-training-loop
 
-# 3. 코드 수정 후 변경사항 저장
+# 3. 코드 수정 후 커밋
 git add .
-git commit -m "feat: 트랜스포머 모델 구조 작성"
+git commit -m "Feat: 학습 루프 추가"
 
-# 4. 내 브랜치를 깃허브에 업로드
+# 4. 브랜치 업로드 후 PR 생성
 git push origin feature/기능이름
 ```
-업로드 후, 깃허브 웹사이트에 접속하여 **Pull Request (PR)**를 생성해 팀원들의 리뷰를 받고 `main` 브랜치로 병합(Merge)합니다.
 
-### 2. 커밋 메시지 규칙 (Commit Message Convention)
-커밋 메시지는 다른 팀원이 한눈에 알아볼 수 있도록 머릿말을 달아주세요.
-- `feat:` : 새로운 기능 추가
-- `fix:` : 버그, 에러 수정
-- `docs:` : README 등 문서 수정
-- `refactor:` : 결과는 같지만 코드 구조를 개선(리팩토링)
-- `chore:` : 패키지 업데이트, 주석 수정 등 자잘한 변경
+### 2. 커밋 메시지 규칙
 
-### 3. 코드 컨벤션 (Code Convention)
-- 파이썬 표준 가이드인 **PEP8** 스타일을 지향합니다.
-- 새로운 함수나 클래스를 작성할 때는 반드시 **Docstring (`""" 설명 """`)**을 달아 파라미터와 반환값을 명시해 주세요. (예: `st_gat.py` 참고)
+- `Feat:` — 새로운 기능 추가
+- `Fix:` — 버그 수정
+- `Refactor:` — 코드 구조 개선 (동작 변경 없음)
+- `Docs:` — README 등 문서 수정
+- `Chore:` — 패키지 업데이트, 파일 삭제 등 기타 변경
+- `Test:` — 테스트 코드 추가 및 수정
+
+> 용어, 변수명, 클래스명 등 코드 관련 고유명사는 영문 유지, 나머지는 한글 작성
+
+### 3. 코드 컨벤션
+
+- **PEP8** 스타일 준수
+- 모든 클래스·함수에 **Docstring** 작성 (파라미터 및 반환값 명시)
+- 예시: `temporal.py`, `st_gcn.py` 참고
 
 ## 📜 License
-[MIT License](LICENSE) (Change to Apache 2.0 or appropriate license based on your preference)
+
+[MIT License](LICENSE)
