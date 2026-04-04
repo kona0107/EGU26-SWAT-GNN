@@ -30,17 +30,16 @@ class TemporalEncoder(nn.Module):
     def __init__(self, input_dim, hidden_dim, num_layers=2, nhead=4, dropout=0.1):
         """
         초기화 파라미터 설명:
-        - input_dim: 입력 피처의 개수 (SWAT 데이터의 Flow, TN, TP 등 = 3)
-        - hidden_dim: 트랜스포머가 내부적으로 계산할 공간의 크기 (예: 32차원 뻥튀기 공간)
-        - num_layers: 트랜스포머 인코더 블록을 몇 겹으로 쌓을지 (보통 2~4겹)
-        - nhead: Multi-head Attention 장치의 개수. 동시에 여러 관점에서 과거 데이터를 평가합니다.
-                 (예: 헤드1은 유량을 집중분석, 헤드2는 총인(TP) 유입 집중분석 등)
+        - input_dim: 입력 피처의 개수 (SWAT 데이터의 Flow, TN, TP + NodeType 등 = 7)
+        - hidden_dim: 트랜스포머가 내부적으로 계산할 공간의 크기
+        - num_layers: 트랜스포머 인코더 블록을 몇 겹으로 쌓을지
+        - nhead: Multi-head Attention 장치의 개수.
         """
         super().__init__()
         # 1. 원본 변수들을 트랜스포머 차원(d_model)으로 선형 변환
         self.input_projection = nn.Linear(input_dim, hidden_dim)
         
-        # 2. 위치 인코딩 (절대적 혹은 상대적 시간 간격 정보 주입!)
+        # 2. 위치 인코딩
         self.pos_encoder = PositionalEncoding(hidden_dim)
         
         # 3. 트랜스포머 인코더 블록 조립
@@ -55,22 +54,15 @@ class TemporalEncoder(nn.Module):
 
     def forward(self, x):
         """
-        핵심 변수 설명 (B, L, N, F):
-        - B (Batch Size): 한 번에 학습할 데이터 묶음의 크기 (예: 32일치 상황을 묶어서 병렬 학습)
-        - L (Lookback Window): 트랜스포머가 과거를 되돌아보는 기간 (예: 과거 14일치)
-        - N (Nodes/Subbasins): 미호강 유역의 세부 소유역 개수 (예: 29개)
-        - F (Features): 투입된 환경 변수의 개수 (Flow, TN, TP = 3개)
-        
-        :param x: [B, L, N, F] 형태의 원본 시계열 피처
-        :return: [B, N, hidden_dim] 형태의 노드별 시계열 맥락 임베딩
+        x: [B, L, N, F]
+        return: [B, N, hidden_dim]
         """
         B, L, N, F = x.shape
         
         # [B, L, N, F] -> [B, N, L, F] -> [B*N, L, F] 
-        # (29개의 각 로컬 유역들을 하나하나의 독립된 시퀀스로 취급해 Attention 계산)
         x_reshaped = x.permute(0, 2, 1, 3).contiguous().view(B * N, L, F)
         
-        # 차원 매핑: 3(Flow, TN, TP) -> hidden_dim
+        # 차원 매핑: F -> hidden_dim
         x_proj = self.input_projection(x_reshaped)
         
         # 위치 인코딩 추가
@@ -86,3 +78,41 @@ class TemporalEncoder(nn.Module):
         node_embeddings = last_hidden.view(B, N, -1)
         
         return node_embeddings
+
+class TransformerBaseline(nn.Module):
+    """
+    Model 1. Transformer (단일 유출구 예측용 Baseline)
+    입력: 유출구 노드의 시계열 (T-k ~ T-1)
+    출력: 유출구 예측 Chl-a[t]
+    """
+    def __init__(self, in_features=7, hidden_dim=32, out_features=1, num_layers=2, nhead=4):
+        super().__init__()
+        self.temporal_encoder = TemporalEncoder(
+            input_dim=in_features,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            nhead=nhead
+        )
+        self.predictor = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, out_features)
+        )
+        
+    def forward(self, x_seq, outlet_node_idx=-1):
+        """
+        x_seq: [B, L, N, F]
+        outlet_node_idx: 유출구 노드 인덱스
+        """
+        # 유출구 시계열만 추출 => [B, L, 1, F]
+        outlet_seq = x_seq[:, :, outlet_node_idx, :].unsqueeze(2)
+        
+        # Temporal 인코딩 => [B, 1, hidden_dim]
+        embeds = self.temporal_encoder(outlet_seq)
+        
+        # Squeeze => [B, hidden_dim]
+        embeds = embeds.squeeze(1)
+        
+        # 최종 스칼라 값 예측 => [B, 1]
+        out = self.predictor(embeds)
+        return out
