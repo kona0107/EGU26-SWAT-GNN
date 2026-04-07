@@ -69,12 +69,14 @@ venv.bak/
 
 # Data sets (Exclude large files)
 *.csv
+!script/data/outlet_lag_pcp.csv
+!script/data/upstream_lag_pcp.csv
 *.tsv
 *.npy
 *.pt
 *.pth
 *.zip
-/script/data/
+# /script/data/
 datasets/
 docs/
 document/
