@@ -148,9 +148,9 @@ def prepare_and_split_data(raw_features, outlet_node_idx=OUTLET_IDX,
         skewed_out = [0, 1, 2, 5]
         
         # 음수값 예외처리를 위한 clip
-        features_log[:, upstream_indices, skewed_up] = np.log1p(
-            np.clip(features_log[:, upstream_indices, skewed_up], 0, None)
-        )
+        up_subset = features_log[:, upstream_indices, :].copy()
+        up_subset[:, :, skewed_up] = np.log1p(np.clip(up_subset[:, :, skewed_up], 0, None))
+        features_log[:, upstream_indices, :] = up_subset
         
         out_subset = features_log[:, outlet_node_idx, :].copy()
         out_subset[:, skewed_out] = np.log1p(np.clip(out_subset[:, skewed_out], 0, None))
