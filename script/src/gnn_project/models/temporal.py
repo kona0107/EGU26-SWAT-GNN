@@ -21,6 +21,40 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1), :]
         return x
 
+class GRUTemporalEncoder(nn.Module):
+    """
+    각 Subbasin(노드)의 시간적 다이내믹스를 인코딩하는 <GRU> 모듈.
+    트랜스포머에 비해 가볍고 빠른 학습이 가능하며, 짧은 주간 데이터에서 우수한 Smoothing 능력을 갖습니다.
+    """
+    def __init__(self, input_dim, hidden_dim, num_layers=2, dropout=0.1):
+        super().__init__()
+        self.gru = nn.GRU(
+            input_size=input_dim, 
+            hidden_size=hidden_dim, 
+            num_layers=num_layers, 
+            batch_first=True, 
+            dropout=dropout if num_layers > 1 else 0
+        )
+
+    def forward(self, x):
+        """
+        x: [B, L, N, F]
+        return: [B, N, hidden_dim]
+        """
+        B, L, N, F = x.shape
+        # [B, L, N, F] -> [B, N, L, F] -> [B*N, L, F] 
+        x_reshaped = x.permute(0, 2, 1, 3).contiguous().view(B * N, L, F)
+        
+        # out: [B*N, L, hidden_dim], h_n: [num_layers, B*N, hidden_dim]
+        out, _ = self.gru(x_reshaped)
+        
+        # 마지막 타임스텝의 출력 사용
+        last_hidden = out[:, -1, :]  # [B*N, hidden_dim]
+        
+        # 원래 형태인 [B, N, hidden_dim]으로 복구
+        node_embeddings = last_hidden.view(B, N, -1)
+        return node_embeddings
+
 class TemporalEncoder(nn.Module):
     """
     각 Subbasin(노드)의 시간적 다이내믹스를 인코딩하는 <Transformer> 모듈.

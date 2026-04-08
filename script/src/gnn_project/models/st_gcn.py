@@ -1,23 +1,34 @@
 import torch
 import torch.nn as nn
-from .temporal import TemporalEncoder
+from .temporal import TemporalEncoder, GRUTemporalEncoder
 from .gcn import SpatialEncoder
 
 class SpatioTemporalHybridGNN(nn.Module):
     """
-    Model 2. Transformer + SAGEConv (시공간 하이브리드 모델)
-    - 시간적 정보: 모든 노드(상류, 하류)가 각각 Transformer Encoder를 거처 임베딩을 생성
-    - 공간적 정보: SAGEConv를 통해 상류의 임베딩이 하류로 전파됨 (수문학적 Routing)
-    - 예측 정보: GNN 통과 후, 오직 유출구(Outlet) 노드의 숨겨진 상태(Hidden State)만 읽어서 Chl-a 예측
+    Model 2. Temporal + SAGEConv (시공간 하이브리드 모델)
+    - 시간적 정보: 모든 노드가 각각 인코더(Transformer/GRU)를 거쳐 임베딩을 생성
+    - 공간적 정보: SAGEConv를 통해 상류의 임베딩이 하류로 전파됨
+    - 예측 정보: GNN 통과 후, 유출구 노드의 Hidden State만 읽어서 예측
     """
-    def __init__(self, in_features=11, temporal_hidden=32, gcn_hidden=16, out_features=1, num_temporal_layers=2):
+    def __init__(self, in_features=11, temporal_hidden=32, gcn_hidden=16, 
+                 out_features=1, num_temporal_layers=2, temporal_type="transformer"):
         super().__init__()
         
-        self.temporal_encoder = TemporalEncoder(
-            input_dim=in_features, 
-            hidden_dim=temporal_hidden, 
-            num_layers=num_temporal_layers
-        )
+        self.temporal_type = temporal_type.lower()
+        if self.temporal_type == "transformer":
+            self.temporal_encoder = TemporalEncoder(
+                input_dim=in_features, 
+                hidden_dim=temporal_hidden, 
+                num_layers=num_temporal_layers
+            )
+        elif self.temporal_type == "gru":
+            self.temporal_encoder = GRUTemporalEncoder(
+                input_dim=in_features, 
+                hidden_dim=temporal_hidden, 
+                num_layers=num_temporal_layers
+            )
+        else:
+            raise ValueError(f"Unknown temporal_type: {temporal_type}")
         
         self.spatial_encoder = SpatialEncoder(
             in_channels=temporal_hidden, 

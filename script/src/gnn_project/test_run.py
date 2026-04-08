@@ -58,7 +58,7 @@ def run_sanity_checks(dataset, outlet_idx, name="Dataset"):
 
 def main():
     print("=== [EGU26 수문학적 GNN 데이터 파이프라인 테스트] ===")
-    T, N, F = 365, 29, 6   # 6개의 실측치 가정 (유량, TN, TP, 수온, 강수, Chl-a)
+    T, N, F = 365, 29, 10   # 10개의 실측치 패딩 전 상태
     lookback = 14
     outlet_idx = N - 1
     
@@ -66,7 +66,7 @@ def main():
     print("\n1. 엄격한 Chronological Split 데이터를 생성합니다.")
     raw_dummy = generate_custom_dummy(T, N, F)
     
-    train_ds, val_ds, test_ds, scaler_out = prepare_and_split_data(
+    train_ds, val_ds, test_ds, scaler_out, scaler_target = prepare_and_split_data(
         raw_dummy, outlet_node_idx=outlet_idx, lookback_window=lookback
     )
     
@@ -88,12 +88,12 @@ def main():
     print(f"\n3. 모델 아키텍처 포워드 테스트 (Batch Size : {x_batch.shape})")
     
     # 3-1. 모델 1: Transformer (단일 유출구 Baseline)
-    base_transformer = TransformerBaseline(in_features=7, hidden_dim=32, out_features=1)
+    base_transformer = TransformerBaseline(in_features=11, hidden_dim=32, out_features=1)
     base_preds = base_transformer(x_batch, outlet_node_idx=outlet_idx)
     print(f"  [Model 1. Transformer] 단일 지점 Forward 성공! => Output Shape: {base_preds.shape}")
     
     # 3-2. 모델 2: Transformer + SAGEConv 병합 모델
-    hybrid_model = SpatioTemporalHybridGNN(in_features=7, temporal_hidden=32, gcn_hidden=16)
+    hybrid_model = SpatioTemporalHybridGNN(in_features=11, temporal_hidden=32, gcn_hidden=16)
     
     # 강제 Directed Edge-Index 생성 (Upstream -> Downstream 구조)
     # 노드 0부터 N-2까지 -> 순서대로 다음 노드 (단일방향!)

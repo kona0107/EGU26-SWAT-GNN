@@ -124,21 +124,39 @@ class OutletPredictionDataset(Dataset):
 # 데이터 분할 + 스케일링 + 패딩
 # ─────────────────────────────────────────────
 def prepare_and_split_data(raw_features, outlet_node_idx=OUTLET_IDX,
-                            lookback_window=14, train_ratio=0.7, val_ratio=0.15):
+                            lookback_window=14, train_ratio=0.7, val_ratio=0.15,
+                            apply_log1p=True):
     """
     엄격한 Chronological Split, 피처별 스케일링, 통일 패딩 적용.
 
     :param raw_features: [T, N, RAW_DIM]
                          upstream: [:3] = FLOW, TN, TP  / [3:] = 0
                          outlet  : [:10] = 전체 피처
-    Returns: train_ds, val_ds, test_ds, scaler_out
+    :param apply_log1p: 비대칭 분포를 가진 피처(FLOW, TN, TP, chl)에 np.log1p 사전 적용
+    Returns: train_ds, val_ds, test_ds, scaler_out, scaler_target
     """
     T, N, F_raw = raw_features.shape
     assert F_raw == RAW_DIM, f"raw_features 마지막 차원이 {RAW_DIM}이어야 합니다. 현재: {F_raw}"
 
     upstream_indices = [i for i in range(N) if i != outlet_node_idx]
 
-    # 1. Chronological Split
+    # 1. Log Transform (선택)
+    # 인덱스: FLOW(0), TN(1), TP(2), chl(5)
+    features_log = raw_features.copy()
+    if apply_log1p:
+        skewed_up  = [0, 1, 2]
+        skewed_out = [0, 1, 2, 5]
+        
+        # 음수값 예외처리를 위한 clip
+        features_log[:, upstream_indices, skewed_up] = np.log1p(
+            np.clip(features_log[:, upstream_indices, skewed_up], 0, None)
+        )
+        
+        out_subset = features_log[:, outlet_node_idx, :].copy()
+        out_subset[:, skewed_out] = np.log1p(np.clip(out_subset[:, skewed_out], 0, None))
+        features_log[:, outlet_node_idx, :] = out_subset
+
+    # 2. Chronological Split
     train_end = int(T * train_ratio)
     val_end   = train_end + int(T * val_ratio)
 
@@ -147,27 +165,32 @@ def prepare_and_split_data(raw_features, outlet_node_idx=OUTLET_IDX,
     test_times  = np.arange(val_end, T)
     assert train_times[-1] < val_times[0] < test_times[0], "Temporal Split 누수 발생"
 
-    X_train = raw_features[:train_end].copy()
-    X_val   = raw_features[train_end:val_end].copy()
-    X_test  = raw_features[val_end:].copy()
+    X_train = features_log[:train_end].copy()
+    X_val   = features_log[train_end:val_end].copy()
+    X_test  = features_log[val_end:].copy()
 
-    # 2. Train 기준으로 Scaler 학습
+    # 3. Train 기준으로 Scaler 학습
     def fit_scalers(train_arr):
         # Upstream: FLOW, TN, TP (채널 0~2)
         scaler_up = StandardScaler()
         up_data = train_arr[:, upstream_indices, :3].reshape(-1, 3)
         scaler_up.fit(up_data)
 
-        # Outlet: 10채널 전체 (FLOW, TN, TP, PCP, wt, chl, Green, Red, Blue_Green, Red_NIR)
+        # Outlet: 10채널 전체
         scaler_out = StandardScaler()
         out_data = train_arr[:, outlet_node_idx, :RAW_DIM].reshape(-1, RAW_DIM)
         scaler_out.fit(out_data)
+        
+        # Target: 오직 Chl-a (역변환을 쉽고 확실하게 하기 위함)
+        scaler_target = StandardScaler()
+        target_data = train_arr[:, outlet_node_idx, 5].reshape(-1, 1)
+        scaler_target.fit(target_data)
 
-        return scaler_up, scaler_out
+        return scaler_up, scaler_out, scaler_target
 
-    scaler_up, scaler_out = fit_scalers(X_train)
+    scaler_up, scaler_out, scaler_target = fit_scalers(X_train)
 
-    # 3. 스케일링 + 통일 패딩([T, N, FEATURE_DIM=11])
+    # 4. 스케일링 + 통일 패딩([T, N, FEATURE_DIM=11])
     def transform_and_pad(arr):
         out_arr = np.zeros((arr.shape[0], N, FEATURE_DIM), dtype=np.float32)
 
@@ -183,16 +206,19 @@ def prepare_and_split_data(raw_features, outlet_node_idx=OUTLET_IDX,
         out_arr[:, outlet_node_idx, :RAW_DIM] = out_scaled
         out_arr[:, outlet_node_idx, 10]       = 1.0  # Node Type = Outlet
 
-        # 정답 y: chl = 스케일링된 채널 인덱스 5
-        y_arr = out_scaled[:, 5:6]  # [T, 1]
+        # 정답 y: chl = (target scaler 기준 변환 적용)
+        y_orig = arr[:, outlet_node_idx, 5].reshape(-1, 1)
+        y_scaled = scaler_target.transform(y_orig)
 
-        return out_arr, y_arr
+        # 주의: 피처로서 사용될 때는 scaler_out에 의해 변환된 out_scaled[:, 5] 값을 유지함
+        # 하지만 명시적으로 분리된 y값은 scaler_target을 사용.
+        return out_arr, y_scaled
 
     X_tr, y_tr = transform_and_pad(X_train)
     X_v,  y_v  = transform_and_pad(X_val)
     X_te, y_te = transform_and_pad(X_test)
 
-    # 4. Padding Sanity Check
+    # 5. Padding Sanity Check
     assert np.all(X_tr[:, upstream_indices, 3:10] == 0), \
         "Upstream 패딩 실패: 채널 3~9에 0이 아닌 값 존재"
     assert np.all(X_tr[:, outlet_node_idx, 10] == 1.0), \
@@ -202,7 +228,7 @@ def prepare_and_split_data(raw_features, outlet_node_idx=OUTLET_IDX,
     val_ds   = OutletPredictionDataset(X_v,  y_v,  lookback_window, name="Val")
     test_ds  = OutletPredictionDataset(X_te, y_te, lookback_window, name="Test")
 
-    return train_ds, val_ds, test_ds, scaler_out
+    return train_ds, val_ds, test_ds, scaler_out, scaler_target
 
 
 # ─────────────────────────────────────────────
@@ -230,7 +256,7 @@ def generate_custom_dummy(T=200, N=N_NODES, F=RAW_DIM):
 if __name__ == "__main__":
     print("=== [Data Pipeline Test] ===")
     raw = generate_custom_dummy(T=200)
-    train_ds, val_ds, test_ds, scaler = prepare_and_split_data(raw, lookback_window=10)
+    train_ds, val_ds, test_ds, scaler, scaler_target = prepare_and_split_data(raw, lookback_window=10)
 
     print(f"Train / Val / Test: {len(train_ds)} / {len(val_ds)} / {len(test_ds)}")
 
