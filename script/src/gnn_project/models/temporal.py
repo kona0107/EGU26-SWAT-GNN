@@ -64,7 +64,7 @@ class TemporalEncoder(nn.Module):
     def __init__(self, input_dim, hidden_dim, num_layers=2, nhead=4, dropout=0.1):
         """
         초기화 파라미터 설명:
-        - input_dim: 입력 피처의 개수 (FLOW,TN,TP,PCP,wt,chl,Green,Red,Blue_Green,Red_NIR,NodeType = 11)
+        - input_dim: 입력 피처의 개수 (outlet 확장 피처 + NodeType)
         - hidden_dim: 트랜스포머가 내부적으로 계산할 공간의 크기
         - num_layers: 트랜스포머 인코더 블록을 몇 겹으로 쌓을지
         - nhead: Multi-head Attention 장치의 개수.
@@ -119,7 +119,7 @@ class TransformerBaseline(nn.Module):
     입력: 유출구 노드의 시계열 (T-k ~ T-1)
     출력: 유출구 예측 Chl-a[t]
     """
-    def __init__(self, in_features=11, hidden_dim=32, out_features=1, num_layers=2, nhead=4):
+    def __init__(self, in_features=16, hidden_dim=32, out_features=1, num_layers=2, nhead=4):
         super().__init__()
         self.temporal_encoder = TemporalEncoder(
             input_dim=in_features,

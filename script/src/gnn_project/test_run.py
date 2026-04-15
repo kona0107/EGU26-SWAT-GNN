@@ -6,7 +6,15 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from data.dataset import generate_custom_dummy, prepare_and_split_data
+from data.dataset import (
+    CHL_IDX,
+    FEATURE_DIM,
+    NODE_TYPE_IDX,
+    RAW_DIM,
+    UPSTREAM_CORE_DIM,
+    generate_custom_dummy,
+    prepare_and_split_data,
+)
 from torch.utils.data import DataLoader
 from models.temporal import TransformerBaseline
 from models.st_gcn import SpatioTemporalHybridGNN
@@ -30,7 +38,7 @@ def evaluate_persistence_baseline(dataset):
         # 실제 데이터 파이프라인에서 Chl-a는 유출구의 5번째 인덱스에 매핑되어 있으며
         # 이는 스케일링 후 2번 차례 변환값으로 적용되었습니다. 
         # 우리의 패딩 인덱스는 0:Flow, 1:TN, 2:TP, 3:Temp, 4:Rain, 5:Chl-a, 6:NodeType
-        last_timestep_chl_a = x_seq[-1, -1, 5].item()
+        last_timestep_chl_a = x_seq[-1, -1, CHL_IDX].item()
         true_chl_a = y_target.item()
         
         squared_error = (true_chl_a - last_timestep_chl_a) ** 2
@@ -48,17 +56,17 @@ def run_sanity_checks(dataset, outlet_idx, name="Dataset"):
         
         # 2. Padding Check
         upstream_indices = [idx for idx in range(dataset.N) if idx != outlet_idx]
-        assert torch.all(x_seq[:, upstream_indices, 3:6] == 0), "Upstream Leakage into downstream features"
-        assert torch.all(x_seq[:, outlet_idx, :3] == 0), "Downstream Leakage into upstream features"
+        assert torch.all(x_seq[:, upstream_indices, UPSTREAM_CORE_DIM:NODE_TYPE_IDX] == 0), "Upstream Leakage into downstream features"
+        assert torch.all(torch.isfinite(x_seq[:, outlet_idx, :NODE_TYPE_IDX])), "Outlet features contain non-finite values"
         
         # 3. Node Type Check
-        assert torch.all(x_seq[:, upstream_indices, 6] == 0), "Node Type mismatch for upstream"
-        assert torch.all(x_seq[:, outlet_idx, 6] == 1), "Node Type mismatch for outlet"
+        assert torch.all(x_seq[:, upstream_indices, NODE_TYPE_IDX] == 0), "Node Type mismatch for upstream"
+        assert torch.all(x_seq[:, outlet_idx, NODE_TYPE_IDX] == 1), "Node Type mismatch for outlet"
     print(f"[{name}] 모든 Sanity Check 통과 완료 (Leakage Zero / Padding 완벽)")
 
 def main():
     print("=== [EGU26 수문학적 GNN 데이터 파이프라인 테스트] ===")
-    T, N, F = 365, 29, 10   # 10개의 실측치 패딩 전 상태
+    T, N, F = 365, 29, RAW_DIM   # outlet 확장 피처 반영
     lookback = 14
     outlet_idx = N - 1
     
@@ -88,12 +96,12 @@ def main():
     print(f"\n3. 모델 아키텍처 포워드 테스트 (Batch Size : {x_batch.shape})")
     
     # 3-1. 모델 1: Transformer (단일 유출구 Baseline)
-    base_transformer = TransformerBaseline(in_features=11, hidden_dim=32, out_features=1)
+    base_transformer = TransformerBaseline(in_features=FEATURE_DIM, hidden_dim=32, out_features=1)
     base_preds = base_transformer(x_batch, outlet_node_idx=outlet_idx)
     print(f"  [Model 1. Transformer] 단일 지점 Forward 성공! => Output Shape: {base_preds.shape}")
     
     # 3-2. 모델 2: Transformer + SAGEConv 병합 모델
-    hybrid_model = SpatioTemporalHybridGNN(in_features=11, temporal_hidden=32, gcn_hidden=16)
+    hybrid_model = SpatioTemporalHybridGNN(in_features=FEATURE_DIM, temporal_hidden=32, gcn_hidden=16)
     
     # 강제 Directed Edge-Index 생성 (Upstream -> Downstream 구조)
     # 노드 0부터 N-2까지 -> 순서대로 다음 노드 (단일방향!)
@@ -109,7 +117,7 @@ def main():
     criterion = nn.MSELoss()
     loss_val = criterion(hybrid_preds, y_batch.view_as(hybrid_preds))
     print(f"  - Mock Forward 배치 손실 정상 계산 여부 (Loss): {loss_val.item():.4f}")
-    print("\n✅ 전체 파이프라인 정상 구동 검증 완료")
+    print("\n전체 파이프라인 정상 구동 검증 완료")
 
 if __name__ == "__main__":
     main()

@@ -10,7 +10,7 @@ class SpatioTemporalHybridGNN(nn.Module):
     - 공간적 정보: SAGEConv를 통해 상류의 임베딩이 하류로 전파됨
     - 예측 정보: GNN 통과 후, 유출구 노드의 Hidden State만 읽어서 예측
     """
-    def __init__(self, in_features=11, temporal_hidden=32, gcn_hidden=16, 
+    def __init__(self, in_features=16, temporal_hidden=32, gcn_hidden=16, 
                  out_features=1, num_temporal_layers=2, temporal_type="transformer"):
         super().__init__()
         
