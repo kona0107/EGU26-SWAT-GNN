@@ -71,6 +71,8 @@ venv.bak/
 *.csv
 !script/data/outlet_lag_pcp.csv
 !script/data/upstream_lag_pcp.csv
+!script/data/outlet.csv
+!script/data/upstream.csv
 *.tsv
 *.npy
 *.pt
