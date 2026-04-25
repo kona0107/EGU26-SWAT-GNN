@@ -148,3 +148,73 @@ class PersistenceResidualGCNFTTransformerModel(GCNFTTransformerModel):
         residual = super().forward(x_seq, edge_index, outlet_node_idx=outlet_node_idx)
         last_outlet_chl = x_seq[:, -1, outlet_node_idx, self.chl_feature_idx].unsqueeze(-1)
         return last_outlet_chl + residual
+
+
+class GCNEmbeddingFTTransformerModel(nn.Module):
+    """
+    Stage 1: apply a spatial GNN at each time step to obtain graph-aware node embeddings.
+    Stage 2: read the outlet embedding sequence with an FT-Transformer style temporal block.
+
+    This keeps the whole path differentiable:
+    raw features -> GCN embeddings -> FT-Transformer -> prediction head.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        lookback_window: int,
+        spatial_hidden: int = 32,
+        temporal_hidden: int = 64,
+        out_features: int = 1,
+        num_layers: int = 2,
+        nhead: int = 4,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        self.lookback_window = lookback_window
+        self.spatial_encoder = SpatialEncoder(
+            in_channels=in_features,
+            hidden_channels=spatial_hidden,
+            out_channels=spatial_hidden,
+        )
+        self.temporal_encoder = FTTransformerTemporalEncoder(
+            input_dim=spatial_hidden,
+            lookback_window=lookback_window,
+            hidden_dim=temporal_hidden,
+            num_layers=num_layers,
+            nhead=nhead,
+            dropout=dropout,
+        )
+        self.predictor = nn.Sequential(
+            nn.Linear(temporal_hidden, temporal_hidden // 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(temporal_hidden // 2, out_features),
+        )
+
+    def forward(self, x_seq: torch.Tensor, edge_index: torch.Tensor, outlet_node_idx: int = -1) -> torch.Tensor:
+        """
+        Args:
+            x_seq: [B, L, N, F]
+            edge_index: [2, E]
+        Returns:
+            preds: [B, out_features]
+        """
+        batch_size, lookback, num_nodes, in_features = x_seq.shape
+        if lookback != self.lookback_window:
+            raise ValueError(
+                f"GCNEmbeddingFTTransformerModel expected lookback={self.lookback_window}, "
+                f"but got sequence length={lookback}."
+            )
+
+        # Run the spatial encoder independently at each time step.
+        time_major = x_seq.view(batch_size * lookback, num_nodes, in_features)
+        flat_nodes = time_major.view(batch_size * lookback * num_nodes, in_features)
+        batched_edge_index = _build_batched_edge_index(edge_index, batch_size * lookback, num_nodes)
+        spatial_out = self.spatial_encoder(flat_nodes, batched_edge_index)
+        spatial_out = spatial_out.view(batch_size, lookback, num_nodes, -1)
+
+        # Keep the outlet embedding sequence and let FT-Transformer model temporal interactions.
+        outlet_sequence = spatial_out[:, :, outlet_node_idx, :].unsqueeze(2)  # [B, L, 1, G]
+        temporal_embedding = self.temporal_encoder(outlet_sequence).squeeze(1)  # [B, H]
+        return self.predictor(temporal_embedding)
